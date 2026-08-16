@@ -1,8 +1,0 @@
-{
-  "name": "instagram-tracker-mvp",
-  "private": true,
-  "workspaces": [
-    "frontend",
-    "worker"
-  ]
-}
