@@ -2738,14 +2738,16 @@ function pagePay() {
   body.appendChild(box);
   if (isBooth && boothOrder) body.appendChild(el('p',{style:{textAlign:'center',fontSize:'13px',fontWeight:'700',color:'var(--navy)',marginBottom:'4px'}},`Order ${boothOrder.orderId}`));
 
-  // Dummy payment QR
+  // RUF support payment QR
   const qrWrap = div({class:'pay-qr-wrap'});
-  const qrEl = div({});
+  const qrEl = el('img',{
+    src:'src/RUFSupportUsQR.png',
+    alt:'RUF Support Us payment QR code',
+    style:{width:'180px',height:'180px',objectFit:'contain',display:'block'}
+  });
   qrWrap.appendChild(qrEl);
   qrWrap.appendChild(el('p',{style:{fontSize:'13px',color:'var(--gray)',marginTop:'12px',textAlign:'center'}},'Scan to pay with your banking app'));
-  qrWrap.appendChild(el('p',{style:{fontSize:'11px',color:'var(--gray)',marginTop:'4px',textAlign:'center'}},'(Placeholder QR — DuitNow QR coming soon)'));
   body.appendChild(qrWrap);
-  qrInto(qrEl, `RUF-DUMMY-PAY|${isBooth?(S.placedOrderId||'?'):'ONLINE'}|${total.toFixed(2)}`, 180);
 
   if (isBooth) {
     if (boothOrder && boothOrder.paidClaimedAt) {
