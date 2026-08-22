@@ -2769,7 +2769,8 @@ function pagePay() {
       onclick:async()=>{ if(confirm('Cancel this order?')){ try{ await cancelOrder(S.placedOrderId,'Cancelled by customer at booth'); }catch(e){} resetShop(); } }},'Cancel this order');
     body.appendChild(cancelB);
   } else {
-    // Online: receipt upload + submit
+    // Online: submit, then show your payment confirmation screen to our staff in person
+    /*
     body.appendChild(el('div',{class:'section-title'},'Upload payment receipt'));
     if (S.receiptThumb) {
       body.appendChild(el('img',{class:'photo-preview',src:'data:image/jpeg;base64,'+S.receiptThumb}));
@@ -2782,6 +2783,8 @@ function pagePay() {
     }
     const fi = document.getElementById('file-input');
     fi.onchange = async e => { const f=e.target.files[0]; if(!f) return; fi.value=''; S.receiptThumb=await resizeImg(f,1000); render(); };
+    */
+    body.appendChild(div({class:'alert al-navy',style:{textAlign:'center'}},'After paying, submit your order, then show your payment confirmation screen to our staff.'));
 
     if (S.loading) body.appendChild(div({class:'loading-pg'},div({class:'spinner'}),el('p',{},'Submitting order...')));
     else body.appendChild(el('button',{class:'btn-lift btn-primary',style:{width:'100%'},onclick:()=>doPlaceOnline()},"I've Paid — Submit Order"));
@@ -2791,15 +2794,16 @@ function pagePay() {
 }
 
 async function doPlaceOnline() {
-  if (!S.receiptThumb) { toast('Please upload your payment receipt.'); return; }
   if (!validCheckout()) return;
   S.loading = true; render();
   try {
     const order = await placeOrder('online');
+    /*
     try {
       const url = await uploadOrderPhoto(S.receiptThumb, `receipts/${order.orderId}.jpg`);
       await S.db.collection('orders').doc(order.orderId).set({ receiptUrl:url }, { merge:true });
     } catch(e) { console.warn('receipt upload failed', e); }
+    */
     S.placedOrderId = order.orderId;
     S.cart = {}; S.receiptThumb = null;
     S.page = 'order-ok';
@@ -2820,8 +2824,25 @@ function pageOrderOk() {
   w.appendChild(el('div',{class:'success-icon'},'✅'));
   w.appendChild(el('h2',{style:{marginBottom:'8px'}},'Order received!'));
   w.appendChild(el('p',{style:{color:'var(--gray)',marginBottom:'6px',fontWeight:'700'}},S.placedOrderId||''));
-  w.appendChild(el('p',{style:{color:'var(--gray)',marginBottom:'28px',maxWidth:'420px',marginLeft:'auto',marginRight:'auto',lineHeight:'1.6'}},
-    'Our team will verify your payment and prepare your order. Your items are reserved — we\'ll contact you for collection.'));
+
+  const order = S.orders.find(o=>o.orderId===S.placedOrderId) || null;
+  if (order && order.status==='fulfilled') {
+    const done = div({class:'alert al-green',style:{textAlign:'center',maxWidth:'420px',marginLeft:'auto',marginRight:'auto',marginBottom:'28px'}});
+    done.appendChild(document.createTextNode('✅ Payment confirmed — thank you! Your order is ready for collection.'));
+    w.appendChild(done);
+  } else if (order && order.status==='cancelled') {
+    const cancelled = div({class:'alert al-red',style:{textAlign:'center',maxWidth:'420px',marginLeft:'auto',marginRight:'auto',marginBottom:'28px'}});
+    cancelled.appendChild(document.createTextNode('This order was cancelled.'+(order.cancelReason?' ('+order.cancelReason+')':'')));
+    w.appendChild(cancelled);
+  } else {
+    w.appendChild(el('p',{style:{color:'var(--gray)',marginBottom:'14px',maxWidth:'420px',marginLeft:'auto',marginRight:'auto',lineHeight:'1.6'}},
+      'Please show this screen and your payment confirmation to our staff at the booth. Your items are reserved.'));
+    const wait = div({class:'alert al-green',style:{textAlign:'center',maxWidth:'420px',marginLeft:'auto',marginRight:'auto',marginBottom:'28px'}});
+    wait.appendChild(el('span',{class:'pulse-dot'}));
+    wait.appendChild(document.createTextNode('Waiting for staff to confirm your payment...'));
+    w.appendChild(wait);
+  }
+
   const dw = div({style:{display:'flex',justifyContent:'center',gap:'12px',flexWrap:'wrap'}});
   dw.appendChild(el('button',{class:'btn-lift btn-lift-outline',style:{minWidth:'180px'},onclick:()=>resetShop()},'Order More'));
   if (!S.kiosk) dw.appendChild(el('button',{class:'btn-lift btn-lift-outline',style:{minWidth:'180px'},onclick:()=>{resetShop();goWelcome();}},'Done'));
@@ -2953,8 +2974,6 @@ function pageOrders() {
     if (o.receiptUrl) thumbs.appendChild(mkThumb(o.receiptUrl,'Receipt'));
     if (o.fulfilPhotoUrl) thumbs.appendChild(mkThumb(o.fulfilPhotoUrl,'Fulfilment'));
     if (thumbs.childNodes.length) card.appendChild(thumbs);
-    if (o.type==='online' && !o.receiptUrl && ACTIVE_ORDER_STATUSES.includes(o.status))
-      card.appendChild(div({class:'alert al-amber',style:{marginTop:'10px',marginBottom:'0'}},'⚠ No receipt attached — verify payment before fulfilling.'));
     if (o.status==='awaiting-payment' && o.paidClaimedAt)
       card.appendChild(div({class:'alert al-green',style:{marginTop:'10px',marginBottom:'0'}},`🙋 Customer says they've paid (${fmtDateTime(o.paidClaimedAt)}) — check your TnG/bank app, then confirm.`));
 
@@ -3009,14 +3028,24 @@ function pageOrders() {
         pbox.appendChild(el('p',{style:{fontWeight:'bold',marginBottom:'6px'}},`Confirm ${fmtRM(o.total)} received from ${o.customer?.name||'customer'}?`));
         pbox.appendChild(el('p',{style:{fontSize:'13px',marginBottom:'10px'}},'Check your TnG/bank app that the money actually arrived first. Stock will be deducted and the receipt emailed.'));
         const pr = div({style:{display:'flex',gap:'10px'}});
-        pr.appendChild(el('button',{class:'btn btn-green btn-sm',onclick:()=>{S.confirmBoothPayId=null;doConfirmBoothPayment(o.orderId);}},'✓ Yes, paid'));
+        pr.appendChild(el('button',{class:'btn btn-green btn-sm',onclick:()=>{S.confirmBoothPayId=null;doConfirmPayment(o.orderId,'booth');}},'✓ Yes, paid'));
         pr.appendChild(el('button',{class:'btn btn-outline btn-sm',onclick:()=>{S.confirmBoothPayId=null;render();}},'Not yet'));
+        pbox.appendChild(pr);
+        acts.appendChild(pbox);
+      } else if (S.confirmOnlinePayId===o.orderId) {
+        const pbox = div({class:'alert al-green',style:{width:'100%',marginBottom:'0'}});
+        pbox.appendChild(el('p',{style:{fontWeight:'bold',marginBottom:'6px'}},`Confirm ${fmtRM(o.total)} received from ${o.customer?.name||'customer'}?`));
+        pbox.appendChild(el('p',{style:{fontSize:'13px',marginBottom:'10px'}},'Check the customer\'s payment screen that the money actually arrived first. Stock will be deducted and the receipt emailed.'));
+        const pr = div({style:{display:'flex',gap:'10px'}});
+        pr.appendChild(el('button',{class:'btn btn-green btn-sm',onclick:()=>{S.confirmOnlinePayId=null;doConfirmPayment(o.orderId,'online');}},'✓ Yes, paid'));
+        pr.appendChild(el('button',{class:'btn btn-outline btn-sm',onclick:()=>{S.confirmOnlinePayId=null;render();}},'Not yet'));
         pbox.appendChild(pr);
         acts.appendChild(pbox);
       } else {
         if (o.status==='awaiting-payment') {
           acts.appendChild(el('button',{class:'btn btn-green btn-sm',style:{fontSize:'15px',padding:'12px 22px'},onclick:()=>{S.confirmBoothPayId=o.orderId;render();}},'✓ Payment Received'));
         } else {
+          acts.appendChild(el('button',{class:'btn btn-green btn-sm',style:{fontSize:'15px',padding:'12px 22px'},onclick:()=>{S.confirmOnlinePayId=o.orderId;render();}},'✓ Payment Made'));
           acts.appendChild(el('button',{class:'btn btn-navy btn-sm',style:{fontSize:'15px',padding:'12px 22px'},onclick:()=>{
             S.fulfilOrderId=o.orderId; S.fulfilThumb=null; go('fulfil');
           }},'Fulfil Order 📷'));
@@ -3042,9 +3071,9 @@ function pageOrders() {
   pg.appendChild(body); return pg;
 }
 
-async function doConfirmBoothPayment(orderId) {
+async function doConfirmPayment(orderId, channel) {
   try {
-    await fulfilOrderTx(orderId, { fulfilChannel:'booth' });
+    await fulfilOrderTx(orderId, { fulfilChannel: channel });
     S.items = await loadItems();
     toast('Payment confirmed — stock deducted.');
     await emailReceiptFor(orderId); // auto-send receipt (no-op if email not set up)
@@ -3520,6 +3549,7 @@ function pageWelcome() {
     S.savedId='';go('add');
   })));
   cards.appendChild(makeCard('Inventory Management', ()=>checkAdmin(()=>{S.borrowerMode=false;S.takeMode=false;go('home');})));
+  cards.appendChild(makeCard('Order History', ()=>checkAdmin(()=>{S.orderFilter='All';go('orders');})));
 
   wrap.appendChild(cards);
   pg.appendChild(wrap);
